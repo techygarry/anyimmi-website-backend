@@ -16,6 +16,7 @@ import {
   forgotPasswordHandler,
   resetPasswordHandler,
   claimPurchase,
+  devLogin,
 } from "./auth.controller.js";
 
 const router = Router();
@@ -28,6 +29,7 @@ router.get("/verify-email/:token", verifyEmailHandler);
 router.post("/forgot-password", validate(forgotPasswordSchema), forgotPasswordHandler);
 router.post("/reset-password", validate(resetPasswordSchema), resetPasswordHandler);
 router.post("/claim-purchase", claimPurchase);
+router.post("/dev-login", devLogin);
 
 // Google OAuth routes will be added in M04
 

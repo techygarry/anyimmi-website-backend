@@ -5,6 +5,7 @@ import { validate } from "../../middleware/validate.js";
 import { updateProfileSchema, changePasswordSchema } from "./users.validator.js";
 import {
   getMe,
+  getMyEntitlements,
   updateProfile,
   uploadAvatar,
   changePassword,
@@ -21,6 +22,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 router.use(authenticate);
 
 router.get("/me", getMe);
+router.get("/me/entitlements", getMyEntitlements);
 router.patch("/me", validate(updateProfileSchema), updateProfile);
 router.patch("/me/avatar", upload.single("avatar"), uploadAvatar);
 router.patch("/me/password", validate(changePasswordSchema), changePassword);

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
+import { Types } from "mongoose";
 import { User } from "./user.model.js";
+import { Entitlement } from "./entitlement.model.js";
 import { Download } from "../assets/download.model.js";
 import { AppError } from "../../utils/apiError.js";
 import { sendResponse, sendPaginated } from "../../utils/apiResponse.js";
@@ -8,13 +10,74 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "../../config/spaces.js";
 import { env } from "../../config/env.js";
 
+const findActiveEntitlements = (userId: Types.ObjectId) =>
+  Entitlement.find({
+    userId,
+    status: "active",
+    $or: [
+      { expiresAt: { $exists: false } },
+      { expiresAt: { $gt: new Date() } },
+    ],
+  });
+
 export const getMe = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = await User.findById(req.user!._id).populate(
-      "favorites",
-      "name fileFormat previewUrl category"
+    const user = req.user;
+    if (!user) {
+      throw new AppError("Not authenticated", 401);
+    }
+
+    const entitlements = await findActiveEntitlements(user._id);
+
+    sendResponse(res, 200, {
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role || "owner",
+      },
+      org: {
+        id: user._id,
+        type: "solo",
+        name: `${user.name}'s workspace`,
+      },
+      entitlements: entitlements.map((e) => ({
+        product: e.product,
+        tier: e.tier,
+        status: e.status,
+        expiresAt: e.expiresAt,
+        source: e.source,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getMyEntitlements = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      throw new AppError("Not authenticated", 401);
+    }
+
+    const entitlements = await findActiveEntitlements(user._id);
+
+    sendResponse(
+      res,
+      200,
+      entitlements.map((e) => ({
+        product: e.product,
+        tier: e.tier,
+        status: e.status,
+        expiresAt: e.expiresAt,
+        source: e.source,
+      }))
     );
-    sendResponse(res, 200, user);
   } catch (err) {
     next(err);
   }

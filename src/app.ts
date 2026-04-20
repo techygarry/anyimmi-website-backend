@@ -11,9 +11,20 @@ const app = express();
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
+const corsOrigins = Array.from(
+  new Set(
+    [
+      env.FRONTEND_BUNDLE_URL,
+      env.FRONTEND_PORTAL_URL,
+      "http://localhost:3000", // unified dashboard (apps/app)
+      "http://localhost:3030", // bundle marketing site
+    ].filter(Boolean)
+  )
+);
+
 app.use(
   cors({
-    origin: [env.FRONTEND_BUNDLE_URL, env.FRONTEND_PORTAL_URL],
+    origin: corsOrigins,
     credentials: true,
   })
 );

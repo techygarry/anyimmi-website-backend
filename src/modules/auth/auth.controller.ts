@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from "express";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { env } from "../../config/env.js";
 import { sendResponse } from "../../utils/apiResponse.js";
 import {
@@ -265,6 +267,74 @@ export const claimPurchase = async (
         },
       },
       "Account claimed successfully"
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Dev-only login for the unified dashboard. Creates the user if missing
+ * and issues JWT cookies without going through magic-link / password flow.
+ * Disabled when NODE_ENV === "production".
+ */
+export const devLogin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (env.NODE_ENV === "production") {
+      throw new AppError("Dev login disabled in production", 403);
+    }
+
+    const email =
+      typeof req.body?.email === "string"
+        ? req.body.email.trim().toLowerCase()
+        : "";
+    if (!email) {
+      throw new AppError("Email is required", 400);
+    }
+
+    let user = await User.findOne({ email });
+    if (!user) {
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const hashedPassword = await bcrypt.hash(randomPassword, 12);
+      const derivedName = email.split("@")[0] || "Dev User";
+      user = await User.create({
+        name: derivedName,
+        email,
+        password: hashedPassword,
+        isEmailVerified: true,
+      });
+      logger.info(`Dev login created user: ${email}`);
+    }
+
+    const accessToken = generateAccessToken(user._id.toString());
+    const refreshToken = generateRefreshToken(user._id.toString());
+
+    res.cookie("accessToken", accessToken, {
+      ...COOKIE_OPTIONS,
+      maxAge: 15 * 60 * 1000,
+    });
+    res.cookie("refreshToken", refreshToken, {
+      ...COOKIE_OPTIONS,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    sendResponse(
+      res,
+      200,
+      {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role || "owner",
+        },
+        token: accessToken,
+      },
+      "Dev login successful"
     );
   } catch (err) {
     next(err);
