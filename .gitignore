@@ -3,3 +3,5 @@ dist/
 .env
 .env.production
 *.log
+# Bundle assets — too large for git (6.4GB), seed via scripts/seed-bundle-from-downloads.ts
+uploads/bundle/

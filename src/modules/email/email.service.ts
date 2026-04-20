@@ -2,15 +2,20 @@ import { resend } from "../../config/resend.js";
 import { smtpTransport } from "../../config/mailer.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
+import {
+  buildPostPurchaseEmail,
+  type PostPurchaseInput,
+} from "./templates/post-purchase.js";
 
 // Unified send helper — uses SMTP when USE_SMTP=true, otherwise Resend
-async function sendEmail(to: string, subject: string, html: string) {
+async function sendEmail(to: string, subject: string, html: string, text?: string) {
   if (env.USE_SMTP && smtpTransport) {
     const info = await smtpTransport.sendMail({
       from: env.RESEND_FROM_EMAIL,
       to,
       subject,
       html,
+      text,
     });
     logger.info(`SMTP email sent to ${to} (messageId: ${info.messageId})`);
     return;
@@ -21,6 +26,7 @@ async function sendEmail(to: string, subject: string, html: string) {
     to,
     subject,
     html,
+    text,
   });
   if (error) {
     logger.error(`Resend API error to ${to}: ${error.name} - ${error.message}`);
@@ -281,6 +287,18 @@ export const sendInvoiceEmail = async ({
     );
   } catch (err) {
     logger.error(`Failed to send invoice email to ${email}`, err);
+  }
+};
+
+export const sendPostPurchaseEmail = async (
+  input: PostPurchaseInput & { email: string }
+): Promise<void> => {
+  const { email, ...rest } = input;
+  const built = buildPostPurchaseEmail(rest);
+  try {
+    await sendEmail(email, built.subject, built.html, built.text);
+  } catch (err) {
+    logger.error(`Failed to send post-purchase email to ${email}`, err);
   }
 };
 

@@ -97,50 +97,12 @@ router.get("/subcategories/:id", async (req: Request, res: Response, next: NextF
   }
 });
 
-// Public: get assets for a category (by slug) — no file URLs exposed
-router.get("/categories/:slug/items", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const slug = req.params.slug as string;
-    const key = `cat-items:${slug}`;
-    const cached = contentCache.get(key);
-    if (cached) {
-      res.set("Cache-Control", CACHE_HEADER);
-      return sendResponse(res, 200, cached);
-    }
-    const category = await Category.findOne({ slug });
-    if (!category) return sendResponse(res, 404, null, "Category not found");
-    const assets = await Asset.find({ category: category._id })
-      .select("name description fileFormat previewUrl tags")
-      .sort({ name: 1 });
-    contentCache.set(key, assets);
-    res.set("Cache-Control", CACHE_HEADER);
-    sendResponse(res, 200, assets);
-  } catch (err) {
-    next(err);
-  }
-});
+// Public: get assets for a category (by slug) — Postgres-backed.
+import { listCategoryItemsPg, getAssetPg } from "../assets/assets.public.pg.js";
+router.get("/categories/:slug/items", listCategoryItemsPg);
 
-// Public: get a single asset's public info (no file URL)
-router.get("/items/:id", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const id = req.params.id as string;
-    const key = `item:${id}`;
-    const cached = contentCache.get(key);
-    if (cached) {
-      res.set("Cache-Control", CACHE_HEADER);
-      return sendResponse(res, 200, cached);
-    }
-    const asset = await Asset.findById(id)
-      .select("name description fileFormat previewUrl tags category")
-      .populate("category", "name slug icon");
-    if (!asset) return sendResponse(res, 404, null, "Item not found");
-    contentCache.set(key, asset);
-    res.set("Cache-Control", CACHE_HEADER);
-    sendResponse(res, 200, asset);
-  } catch (err) {
-    next(err);
-  }
-});
+// Public: get a single asset's public info — Postgres-backed.
+router.get("/items/:id", getAssetPg);
 
 // Public: founder seat counter (no cache — ticks up live as sales land)
 router.get("/founder-counter", async (_req: Request, res: Response, next: NextFunction) => {

@@ -5,7 +5,12 @@ import { stripe } from "../../config/stripe.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
 import Stripe from "stripe";
-import { sendWelcomeEmail, sendInvoiceEmail } from "../email/email.service.js";
+import {
+  sendWelcomeEmail,
+  sendInvoiceEmail,
+  sendPostPurchaseEmail,
+} from "../email/email.service.js";
+import type { PostPurchaseTier } from "../email/templates/post-purchase.js";
 import { generateInvoiceNumber } from "../../utils/invoiceNumber.js";
 import { getBundlePlanByTier, getPortalPlanById, resolveTierId } from "../../utils/settingsHelper.js";
 import { grantFounderTrialEntitlementsPg } from "../users/entitlement.model.js";
@@ -203,6 +208,23 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             date: new Date(),
             stripePaymentIntent: session.payment_intent as string,
           }).catch((err) => logger.error("Failed to send invoice email", err));
+
+          // V2 Marketing Phase 1 · §11 #19 — post-purchase "dopamine" email.
+          // Only fires for the three V2 tiers; legacy starter/custom/ultimate no-op.
+          try {
+            const pptier = (resolvedTier ?? tier) as string | undefined;
+            if (pptier === "toolkit" || pptier === "firm" || pptier === "founder") {
+              await sendPostPurchaseEmail({
+                email,
+                name: customerName || "there",
+                tier: pptier as PostPurchaseTier,
+                amountPaid: orderAmount,
+                orderId: invoiceNumber,
+              });
+            }
+          } catch (err) {
+            logger.error("Failed to send post-purchase email", err);
+          }
         }
 
         const portalPlan = plan ? await getPortalPlanById(plan) : undefined;

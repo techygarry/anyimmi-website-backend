@@ -5,15 +5,21 @@ import {
   getAsset,
   downloadAsset,
   bulkDownload,
-  listCategories,
-  getCategoryBySlug,
 } from "./assets.controller.js";
+// Public categories now read from Postgres (anyimmi.* schema, seeded
+// with 26 categories + 555 assets from the Bundle source folder).
+// Mongo controller still imported for the auth-required admin paths
+// below that depend on it.
+import {
+  listCategoriesPg,
+  getCategoryBySlugPg,
+} from "./assets.public.pg.js";
 
 const router = Router();
 
-// Public
-router.get("/categories", listCategories);
-router.get("/categories/:slug", getCategoryBySlug);
+// Public — Postgres-backed
+router.get("/categories", listCategoriesPg);
+router.get("/categories/:slug", getCategoryBySlugPg);
 
 // Auth required
 router.get("/", authenticate, listAssets);
