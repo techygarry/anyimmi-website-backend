@@ -1,47 +1,98 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
-import { Types } from "mongoose";
 import { User } from "./user.model.js";
-import { Entitlement } from "./entitlement.model.js";
 import { Download } from "../assets/download.model.js";
 import { AppError } from "../../utils/apiError.js";
 import { sendResponse, sendPaginated } from "../../utils/apiResponse.js";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client } from "../../config/spaces.js";
 import { env } from "../../config/env.js";
+import { db } from "../../db/client.js";
+import {
+  users as pgUsers,
+  organizations as pgOrgs,
+  entitlements as pgEntitlements,
+} from "../../db/schema/index.js";
+import { eq, and, or, isNull, gt } from "drizzle-orm";
 
-const findActiveEntitlements = (userId: Types.ObjectId) =>
-  Entitlement.find({
-    userId,
-    status: "active",
-    $or: [
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } },
-    ],
-  });
+/** Resolve the Postgres user row for the currently-authenticated request. */
+async function resolvePgUser(req: Request) {
+  const reqUser = req.user;
+  if (!reqUser) return null;
+  const rawId = String(reqUser._id);
+
+  // If req.user._id looks like a UUID, lookup by id. Otherwise, legacy Mongo ObjectId → use legacyMongoId bridge.
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
+
+  if (isUuid) {
+    const [row] = await db
+      .select()
+      .from(pgUsers)
+      .where(eq(pgUsers.id, rawId))
+      .limit(1);
+    if (row) return row;
+  }
+
+  const [row] = await db
+    .select()
+    .from(pgUsers)
+    .where(eq(pgUsers.legacyMongoId, rawId))
+    .limit(1);
+  return row ?? null;
+}
+
+async function findActiveEntitlementsPg(userId: string) {
+  return db
+    .select()
+    .from(pgEntitlements)
+    .where(
+      and(
+        eq(pgEntitlements.userId, userId),
+        eq(pgEntitlements.status, "active"),
+        or(
+          isNull(pgEntitlements.expiresAt),
+          gt(pgEntitlements.expiresAt, new Date())
+        )
+      )
+    );
+}
 
 export const getMe = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = req.user;
-    if (!user) {
+    if (!req.user) {
       throw new AppError("Not authenticated", 401);
     }
 
-    const entitlements = await findActiveEntitlements(user._id);
+    const pgUser = await resolvePgUser(req);
+    if (!pgUser) {
+      throw new AppError("User not found", 404);
+    }
+
+    // Find owned org, else synthesise a solo org shape.
+    const [ownedOrg] = await db
+      .select()
+      .from(pgOrgs)
+      .where(eq(pgOrgs.ownerUserId, pgUser.id))
+      .limit(1);
+
+    const ents = await findActiveEntitlementsPg(pgUser.id);
+
+    const fallbackWorkspaceName = `${
+      pgUser.name || pgUser.email.split("@")[0]
+    }'s workspace`;
 
     sendResponse(res, 200, {
       user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        role: user.role || "owner",
+        id: pgUser.id,
+        email: pgUser.email,
+        name: pgUser.name,
+        role: pgUser.role || "owner",
       },
-      org: {
-        id: user._id,
-        type: "solo",
-        name: `${user.name}'s workspace`,
-      },
-      entitlements: entitlements.map((e) => ({
+      org: ownedOrg
+        ? { id: ownedOrg.id, type: ownedOrg.type, name: ownedOrg.name }
+        : { id: pgUser.id, type: "solo", name: fallbackWorkspaceName },
+      entitlements: ents.map((e) => ({
         product: e.product,
         tier: e.tier,
         status: e.status,
@@ -60,17 +111,21 @@ export const getMyEntitlements = async (
   next: NextFunction
 ) => {
   try {
-    const user = req.user;
-    if (!user) {
+    if (!req.user) {
       throw new AppError("Not authenticated", 401);
     }
 
-    const entitlements = await findActiveEntitlements(user._id);
+    const pgUser = await resolvePgUser(req);
+    if (!pgUser) {
+      throw new AppError("User not found", 404);
+    }
+
+    const ents = await findActiveEntitlementsPg(pgUser.id);
 
     sendResponse(
       res,
       200,
-      entitlements.map((e) => ({
+      ents.map((e) => ({
         product: e.product,
         tier: e.tier,
         status: e.status,

@@ -1,9 +1,20 @@
 import { app } from "./app.js";
 import { connectDB } from "./config/database.js";
+import { pingPostgres } from "./db/client.js";
 import { env } from "./config/env.js";
 import { logger } from "./utils/logger.js";
 
 const start = async () => {
+  // Postgres first — non-fatal. Admin routes still need Mongo.
+  try {
+    const ok = await pingPostgres();
+    if (!ok) {
+      logger.warn("Postgres ping failed — continuing with Mongo only");
+    }
+  } catch (err) {
+    logger.warn("Postgres ping threw — continuing with Mongo only", err);
+  }
+
   await connectDB();
   app.listen(env.PORT, () => {
     logger.info(`API running on port ${env.PORT} [${env.NODE_ENV}]`);

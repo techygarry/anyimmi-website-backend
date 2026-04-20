@@ -18,6 +18,12 @@ import { sendVerificationEmail, sendPasswordResetEmail } from "../email/email.se
 import { stripe } from "../../config/stripe.js";
 import { User } from "../users/user.model.js";
 import { logger } from "../../utils/logger.js";
+import { db } from "../../db/client.js";
+import {
+  users as pgUsers,
+  organizations as pgOrgs,
+} from "../../db/schema/index.js";
+import { eq } from "drizzle-orm";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -296,22 +302,42 @@ export const devLogin = async (
       throw new AppError("Email is required", 400);
     }
 
-    let user = await User.findOne({ email });
-    if (!user) {
+    // Look up in Postgres first.
+    let [pgUser] = await db
+      .select()
+      .from(pgUsers)
+      .where(eq(pgUsers.email, email))
+      .limit(1);
+
+    if (!pgUser) {
       const randomPassword = crypto.randomBytes(24).toString("hex");
       const hashedPassword = await bcrypt.hash(randomPassword, 12);
       const derivedName = email.split("@")[0] || "Dev User";
-      user = await User.create({
-        name: derivedName,
-        email,
-        password: hashedPassword,
-        isEmailVerified: true,
+
+      const inserted = await db
+        .insert(pgUsers)
+        .values({
+          email,
+          name: derivedName,
+          passwordHash: hashedPassword,
+          role: "owner",
+          emailVerifiedAt: new Date(),
+        })
+        .returning();
+      pgUser = inserted[0];
+
+      // Create a solo org owned by this user.
+      await db.insert(pgOrgs).values({
+        type: "solo",
+        name: `${derivedName}'s workspace`,
+        ownerUserId: pgUser.id,
       });
-      logger.info(`Dev login created user: ${email}`);
+
+      logger.info(`Dev login created Postgres user: ${email} (${pgUser.id})`);
     }
 
-    const accessToken = generateAccessToken(user._id.toString());
-    const refreshToken = generateRefreshToken(user._id.toString());
+    const accessToken = generateAccessToken(pgUser.id);
+    const refreshToken = generateRefreshToken(pgUser.id);
 
     res.cookie("accessToken", accessToken, {
       ...COOKIE_OPTIONS,
@@ -327,10 +353,10 @@ export const devLogin = async (
       200,
       {
         user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role || "owner",
+          id: pgUser.id,
+          name: pgUser.name,
+          email: pgUser.email,
+          role: pgUser.role || "owner",
         },
         token: accessToken,
       },

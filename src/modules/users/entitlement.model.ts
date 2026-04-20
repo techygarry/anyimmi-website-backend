@@ -1,4 +1,10 @@
 import mongoose, { Document, Schema, Types } from "mongoose";
+import { db } from "../../db/client.js";
+import {
+  entitlements as pgEntitlements,
+  users as pgUsers,
+} from "../../db/schema/index.js";
+import { and, eq } from "drizzle-orm";
 
 export type EntitlementProduct = "ai-tools" | "crm" | "dossiar" | "portal-pro";
 export type EntitlementSource =
@@ -96,6 +102,72 @@ export async function grantFounderTrialEntitlements(
         status: "active",
         expiresAt,
         source: "bundle-founder",
+      });
+    })
+  );
+}
+
+/**
+ * Postgres version of grantFounderTrialEntitlements.
+ *
+ * Accepts a Postgres user UUID. For each of the three upcoming products
+ * (ai-tools, crm, dossiar) it upserts an entitlement row with 90-day
+ * expiry, preserving a later expiry if one already exists.
+ */
+const FOUNDER_TRIAL_PRODUCTS_PG = ["ai-tools", "crm", "dossiar"] as const;
+
+export async function grantFounderTrialEntitlementsPg(
+  userId: string
+): Promise<void> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  // Confirm user exists (defensive — avoids inserting orphan rows).
+  const [u] = await db
+    .select({ id: pgUsers.id })
+    .from(pgUsers)
+    .where(eq(pgUsers.id, userId))
+    .limit(1);
+  if (!u) return;
+
+  await Promise.all(
+    FOUNDER_TRIAL_PRODUCTS_PG.map(async (product) => {
+      const [existing] = await db
+        .select()
+        .from(pgEntitlements)
+        .where(
+          and(
+            eq(pgEntitlements.userId, userId),
+            eq(pgEntitlements.product, product)
+          )
+        )
+        .limit(1);
+
+      if (existing) {
+        const newExpiry =
+          existing.expiresAt && existing.expiresAt > expiresAt
+            ? existing.expiresAt
+            : expiresAt;
+        await db
+          .update(pgEntitlements)
+          .set({
+            expiresAt: newExpiry,
+            status: "active",
+            source: "bundle-founder",
+            tier: "pro",
+            updatedAt: new Date(),
+          })
+          .where(eq(pgEntitlements.id, existing.id));
+        return;
+      }
+
+      await db.insert(pgEntitlements).values({
+        userId,
+        product,
+        tier: "pro",
+        status: "active",
+        source: "bundle-founder",
+        expiresAt,
       });
     })
   );

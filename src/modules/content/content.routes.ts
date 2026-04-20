@@ -5,8 +5,8 @@ import { Testimonial } from "./testimonial.model.js";
 import { Category } from "../assets/category.model.js";
 import { SubCategory } from "../assets/subcategory.model.js";
 import { Asset } from "../assets/asset.model.js";
-import { getFounderCounter } from "../admin/founderCounter.model.js";
-import { getBonusCountdown } from "../admin/bonusCountdown.model.js";
+import { getFounderCounter } from "../admin/founderCounter.repo.js";
+import { getBonusCountdown } from "../admin/bonusCountdown.repo.js";
 import { sendResponse } from "../../utils/apiResponse.js";
 import { contentCache } from "../../utils/cache.js";
 

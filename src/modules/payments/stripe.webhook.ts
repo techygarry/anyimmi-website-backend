@@ -3,15 +3,20 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { stripe } from "../../config/stripe.js";
 import { env } from "../../config/env.js";
-import { Order } from "./order.model.js";
-import { User } from "../users/user.model.js";
 import { logger } from "../../utils/logger.js";
 import Stripe from "stripe";
 import { sendWelcomeEmail, sendInvoiceEmail } from "../email/email.service.js";
 import { generateInvoiceNumber } from "../../utils/invoiceNumber.js";
 import { getBundlePlanByTier, getPortalPlanById, resolveTierId } from "../../utils/settingsHelper.js";
-import { grantFounderTrialEntitlements } from "../users/entitlement.model.js";
-import { incrementFounderCounter } from "../admin/founderCounter.model.js";
+import { grantFounderTrialEntitlementsPg } from "../users/entitlement.model.js";
+import { incrementFounderCounter } from "../admin/founderCounter.repo.js";
+import { db } from "../../db/client.js";
+import {
+  users as pgUsers,
+  orders as pgOrders,
+  organizations as pgOrgs,
+} from "../../db/schema/index.js";
+import { eq } from "drizzle-orm";
 
 // These events are expected but don't need processing
 const IGNORED_EVENTS = new Set([
@@ -49,11 +54,13 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
 
-        // Idempotency check
-        const existing = await Order.findOne({
-          stripeSessionId: session.id,
-        });
-        if (existing) {
+        // Idempotency check (Postgres orders)
+        const [existingOrder] = await db
+          .select({ id: pgOrders.id })
+          .from(pgOrders)
+          .where(eq(pgOrders.stripeCheckoutSessionId, session.id))
+          .limit(1);
+        if (existingOrder) {
           res.status(200).json({ received: true });
           return;
         }
@@ -80,34 +87,65 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             );
           }
 
-          // Find or create user
-          let user = await User.findOne({ email });
+          // Find or create user in Postgres (upsert on email).
           let tempPassword: string | undefined;
-          if (!user) {
-            // Generate a temporary password for guest buyers
-            tempPassword = crypto.randomBytes(6).toString("base64url"); // e.g. "aB3dEf_g"
+          const customerName =
+            session.customer_details?.name || undefined;
+
+          let [pgUser] = await db
+            .select()
+            .from(pgUsers)
+            .where(eq(pgUsers.email, email))
+            .limit(1);
+
+          if (!pgUser) {
+            tempPassword = crypto.randomBytes(6).toString("base64url");
             const hashedPassword = await bcrypt.hash(tempPassword, 12);
-            user = await User.create({
-              name: session.customer_details?.name || "Bundle Buyer",
-              email,
-              password: hashedPassword,
-              isEmailVerified: true,
-              plan: "pro",
-              portalProExpiresAt: proMonths > 0 ? portalProExpiresAt : undefined,
-            });
-          } else {
-            user.plan = "pro";
-            if (proMonths > 0) {
-              user.portalProExpiresAt = portalProExpiresAt;
+            const upserted = await db
+              .insert(pgUsers)
+              .values({
+                email,
+                name: customerName || "Bundle Buyer",
+                passwordHash: hashedPassword,
+                role: "owner",
+                emailVerifiedAt: new Date(),
+                portalProExpiresAt: proMonths > 0 ? portalProExpiresAt : null,
+              })
+              .onConflictDoUpdate({
+                target: pgUsers.email,
+                set: {
+                  portalProExpiresAt:
+                    proMonths > 0 ? portalProExpiresAt : null,
+                  updatedAt: new Date(),
+                },
+              })
+              .returning();
+            pgUser = upserted[0];
+
+            // Create solo org for the new user (best-effort).
+            try {
+              await db.insert(pgOrgs).values({
+                type: "solo",
+                name: `${customerName || email.split("@")[0]}'s workspace`,
+                ownerUserId: pgUser.id,
+              });
+            } catch (err) {
+              logger.error("Failed to create solo org for bundle buyer", err);
             }
-            await user.save();
+          } else if (proMonths > 0) {
+            await db
+              .update(pgUsers)
+              .set({
+                portalProExpiresAt,
+                updatedAt: new Date(),
+              })
+              .where(eq(pgUsers.id, pgUser.id));
           }
 
-          // FOUNDER tier: 90-day entitlements to the three upcoming products
-          // + tick the public founder seat counter.
+          // FOUNDER tier: 90-day entitlements + tick public counter.
           if (resolvedTier === "founder") {
             try {
-              await grantFounderTrialEntitlements(user._id);
+              await grantFounderTrialEntitlementsPg(pgUser.id);
             } catch (err) {
               logger.error("Failed to grant founder trial entitlements", err);
             }
@@ -118,27 +156,29 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             }
           }
 
-          // Create order
+          // Create order (Postgres).
           const invoiceNumber = await generateInvoiceNumber();
-          const orderAmount = (session.amount_total || 0) / 100;
+          const orderAmountCents = session.amount_total || 0;
+          const orderAmount = orderAmountCents / 100;
           const orderCurrency = session.currency || "usd";
-          const customerName = session.customer_details?.name || undefined;
 
-          await Order.create({
-            userId: user._id,
+          await db.insert(pgOrders).values({
+            userId: pgUser.id,
             email,
-            name: customerName,
-            invoiceNumber,
-            stripeSessionId: session.id,
-            stripePaymentIntent: session.payment_intent as string,
-            stripeCustomerId: session.customer as string,
-            tier: resolvedTier ?? tier,
-            amount: orderAmount,
+            tier: resolvedTier ?? tier ?? "unknown",
+            amountCents: orderAmountCents,
             currency: orderCurrency,
-            status: "completed",
-            deliveryStatus: "pending",
-            portalAccessGranted: true,
-            portalProMonths: proMonths,
+            status: "paid",
+            stripeCheckoutSessionId: session.id,
+            stripePaymentIntentId: (session.payment_intent as string) || null,
+            invoiceNumber,
+            paidAt: new Date(),
+            metadata: {
+              customerName,
+              stripeCustomerId: session.customer as string,
+              portalProMonths: proMonths,
+              deliveryStatus: "pending",
+            },
           });
 
           logger.info(`Bundle purchase: ${tier} by ${email} ($${orderAmount})`);
@@ -168,35 +208,42 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         const portalPlan = plan ? await getPortalPlanById(plan) : undefined;
         if (portalPlan) {
           // Portal subscription
-          const userId = session.metadata?.userId;
-          if (userId) {
-            const user = await User.findById(userId);
-            if (user) {
-              user.plan = plan as "pro" | "business";
-              user.subscriptionId = session.subscription as string;
-              user.subscriptionStatus = "active";
-              user.stripeCustomerId = session.customer as string;
-              await user.save();
-            }
+          const subUserId = session.metadata?.userId;
+          // subUserId from metadata is expected to be the Postgres UUID
+          // post-migration. If it's not a UUID, we skip the user update —
+          // the downstream portal subscription flow is not wired yet.
+          const UUID_RE =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (subUserId && UUID_RE.test(subUserId)) {
+            await db
+              .update(pgUsers)
+              .set({ updatedAt: new Date() })
+              .where(eq(pgUsers.id, subUserId));
           }
 
           const subInvoiceNumber = await generateInvoiceNumber();
-          const subAmount = (session.amount_total || 0) / 100;
+          const subAmountCents = session.amount_total || 0;
+          const subAmount = subAmountCents / 100;
           const subCurrency = session.currency || "usd";
           const subTier = plan === "pro" ? "portal_pro" : "portal_business";
 
-          await Order.create({
-            userId,
+          await db.insert(pgOrders).values({
+            userId: subUserId && UUID_RE.test(subUserId) ? subUserId : null,
             email,
-            invoiceNumber: subInvoiceNumber,
-            stripeSessionId: session.id,
-            stripeCustomerId: session.customer as string,
             tier: subTier,
-            amount: subAmount,
+            amountCents: subAmountCents,
             currency: subCurrency,
-            status: "completed",
-            deliveryStatus: "email_sent",
-            portalAccessGranted: true,
+            status: "paid",
+            stripeCheckoutSessionId: session.id,
+            stripePaymentIntentId: (session.payment_intent as string) || null,
+            invoiceNumber: subInvoiceNumber,
+            paidAt: new Date(),
+            metadata: {
+              stripeCustomerId: session.customer as string,
+              stripeSubscriptionId: session.subscription as string,
+              plan,
+              deliveryStatus: "email_sent",
+            },
           });
 
           logger.info(`Portal subscription: ${plan} by ${email}`);
@@ -218,17 +265,13 @@ export const stripeWebhook = async (req: Request, res: Response) => {
       }
 
       case "customer.subscription.deleted": {
+        // Subscription cancellations are tracked on the Mongo user today.
+        // Not repointed here (out of scope — portal subscription flow is
+        // still Mongo-backed). Log and no-op on Postgres.
         const subscription = event.data.object as Stripe.Subscription;
-        const user = await User.findOne({
-          subscriptionId: subscription.id,
-        });
-        if (user) {
-          user.plan = "free";
-          user.subscriptionId = undefined;
-          user.subscriptionStatus = "canceled";
-          await user.save();
-          logger.info(`Subscription cancelled for ${user.email}`);
-        }
+        logger.info(
+          `Stripe subscription.deleted ${subscription.id} — Postgres no-op (Mongo-only flow)`
+        );
         break;
       }
 

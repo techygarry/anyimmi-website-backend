@@ -11,11 +11,11 @@ import { SiteSetting } from "./siteSetting.model.js";
 import {
   getFounderCounter,
   updateFounderCounter,
-} from "./founderCounter.model.js";
+} from "./founderCounter.repo.js";
 import {
   getBonusCountdown,
   updateBonusCountdown,
-} from "./bonusCountdown.model.js";
+} from "./bonusCountdown.repo.js";
 import { SliderImage } from "../content/sliderImage.model.js";
 import { Testimonial } from "../content/testimonial.model.js";
 import { Contact } from "../contact/contact.model.js";
@@ -824,7 +824,7 @@ export const getFounderCounterAdmin = async (_req: Request, res: Response, next:
 
 export const patchFounderCounter = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const patch: Record<string, unknown> = {};
+    const patch: { current?: number; target?: number; active?: boolean } = {};
     if (req.body.current !== undefined) {
       const n = Number(req.body.current);
       if (!Number.isFinite(n) || n < 0) {
@@ -842,7 +842,8 @@ export const patchFounderCounter = async (req: Request, res: Response, next: Nex
     if (req.body.active !== undefined) {
       patch.active = Boolean(req.body.active);
     }
-    const doc = await updateFounderCounter(patch);
+    await updateFounderCounter(patch);
+    const doc = await getFounderCounter();
     sendResponse(res, 200, doc, "Founder counter updated");
   } catch (err) {
     next(err);
@@ -861,7 +862,11 @@ export const getBonusCountdownAdmin = async (_req: Request, res: Response, next:
 
 export const patchBonusCountdown = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const patch: Record<string, unknown> = {};
+    const patch: {
+      expiresAt?: Date;
+      bonusDescription?: string;
+      active?: boolean;
+    } = {};
     if (req.body.expiresAt !== undefined) {
       const d = new Date(req.body.expiresAt);
       if (Number.isNaN(d.getTime())) {
@@ -878,7 +883,8 @@ export const patchBonusCountdown = async (req: Request, res: Response, next: Nex
     if (req.body.active !== undefined) {
       patch.active = Boolean(req.body.active);
     }
-    const doc = await updateBonusCountdown(patch);
+    await updateBonusCountdown(patch);
+    const doc = await getBonusCountdown();
     sendResponse(res, 200, doc, "Bonus countdown updated");
   } catch (err) {
     next(err);
