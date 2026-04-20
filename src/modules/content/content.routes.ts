@@ -37,16 +37,27 @@ router.get("/slider-images", async (req: Request, res: Response, next: NextFunct
 // Public: get active testimonials
 router.get("/testimonials", async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const key = "testimonials";
+    const key = "testimonials-pg";
     const cached = contentCache.get(key);
     if (cached) {
       res.set("Cache-Control", CACHE_HEADER);
       return sendResponse(res, 200, cached);
     }
-    const testimonials = await Testimonial.find({ isActive: true }).sort({ sortOrder: 1 });
-    contentCache.set(key, testimonials);
+    // Postgres-backed — reads from anyimmi.testimonials (demo + real).
+    const { db } = await import("../../db/client.js");
+    const { testimonials: T } = await import("../../db/schema/index.js");
+    const { eq, asc } = await import("drizzle-orm");
+    const rows = await db.select({
+      _id: T.id,
+      name: T.name,
+      role: T.role,
+      text: T.text,
+      rating: T.rating,
+      avatarColor: T.avatarColor,
+    }).from(T).where(eq(T.isPublished, true)).orderBy(asc(T.sortOrder));
+    contentCache.set(key, rows);
     res.set("Cache-Control", CACHE_HEADER);
-    sendResponse(res, 200, testimonials);
+    sendResponse(res, 200, rows);
   } catch (err) {
     next(err);
   }
