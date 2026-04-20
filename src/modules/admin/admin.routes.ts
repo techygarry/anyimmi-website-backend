@@ -39,6 +39,10 @@ import {
   getContacts,
   updateContact,
   deleteContact,
+  getFounderCounterAdmin,
+  patchFounderCounter,
+  getBonusCountdownAdmin,
+  patchBonusCountdown,
 } from "./admin.controller.js";
 
 const router = Router();
@@ -161,5 +165,13 @@ router.delete("/testimonials/:id", deleteTestimonial);
 router.get("/contacts", getContacts);
 router.patch("/contacts/:id", updateContact);
 router.delete("/contacts/:id", deleteContact);
+
+// Founder counter (forcing-function: seat count for THE FOUNDER tier)
+router.get("/founder-counter", getFounderCounterAdmin);
+router.patch("/founder-counter", patchFounderCounter);
+
+// Weekly bonus countdown
+router.get("/bonus-countdown", getBonusCountdownAdmin);
+router.patch("/bonus-countdown", patchBonusCountdown);
 
 export default router;

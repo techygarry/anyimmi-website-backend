@@ -5,6 +5,8 @@ import { Testimonial } from "./testimonial.model.js";
 import { Category } from "../assets/category.model.js";
 import { SubCategory } from "../assets/subcategory.model.js";
 import { Asset } from "../assets/asset.model.js";
+import { getFounderCounter } from "../admin/founderCounter.model.js";
+import { getBonusCountdown } from "../admin/bonusCountdown.model.js";
 import { sendResponse } from "../../utils/apiResponse.js";
 import { contentCache } from "../../utils/cache.js";
 
@@ -135,6 +137,43 @@ router.get("/items/:id", async (req: Request, res: Response, next: NextFunction)
     contentCache.set(key, asset);
     res.set("Cache-Control", CACHE_HEADER);
     sendResponse(res, 200, asset);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Public: founder seat counter (no cache — ticks up live as sales land)
+router.get("/founder-counter", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const doc = await getFounderCounter();
+    const remaining = Math.max(0, doc.target - doc.current);
+    res.set("Cache-Control", "no-store");
+    sendResponse(res, 200, {
+      current: doc.current,
+      target: doc.target,
+      remaining,
+      active: doc.active,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Public: weekly bonus countdown deadline
+router.get("/bonus-countdown", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const doc = await getBonusCountdown();
+    const secondsRemaining = Math.max(
+      0,
+      Math.floor((doc.expiresAt.getTime() - Date.now()) / 1000)
+    );
+    res.set("Cache-Control", "no-store");
+    sendResponse(res, 200, {
+      expiresAt: doc.expiresAt,
+      bonusDescription: doc.bonusDescription,
+      secondsRemaining,
+      active: doc.active,
+    });
   } catch (err) {
     next(err);
   }

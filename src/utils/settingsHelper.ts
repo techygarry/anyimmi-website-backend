@@ -60,6 +60,23 @@ export interface BundlePlan {
   delivery: string;
   highlight: boolean;
   active: boolean;
+  /** Products unlocked for 90-day trial ONLY on the top tier */
+  topTierEntitlements?: string[];
+  /** Strikethrough anchor copy, e.g. "normally $14,997" */
+  valueAnchor?: string;
+  /** Identity line under the tier name */
+  tagline?: string;
+}
+
+/** Legacy tier id -> new tier id (kept for old links, test envs, webhooks) */
+const LEGACY_TIER_ALIASES: Record<string, string> = {
+  starter: "toolkit",
+  custom: "firm",
+  ultimate: "founder",
+};
+
+export function resolveTierId(tier: string): string {
+  return LEGACY_TIER_ALIASES[tier] ?? tier;
 }
 
 export interface PortalPlan {
@@ -76,59 +93,70 @@ export interface PortalPlan {
 
 const DEFAULT_BUNDLE_PLANS: BundlePlan[] = [
   {
-    id: "starter",
-    name: "Starter Bundle",
+    id: "toolkit",
+    name: "THE TOOLKIT",
     stripePriceId: env.STRIPE_PRICE_STARTER,
-    price: 97,
-    valuePrice: 4997,
-    portalProMonths: 3,
+    price: 147,
+    valuePrice: 2585,
+    portalProMonths: 0,
+    tagline: "I'm starting and need the tools",
+    valueAnchor: "normally $1,997",
     features: [
-      "Full 227+ asset bundle (all 17 categories)",
-      "1,000+ editable PSD files",
-      "Instant delivery",
-      "3 months FREE Portal Pro access",
-      "Lifetime bundle updates",
+      "305 ready-to-use assets across 27 categories",
+      "All PSDs, AI files, PDFs, calculators",
+      "Lifetime updates (we ship monthly)",
+      "4 free AI tools (CRS, NOC, EE Draw, SOP gen)",
+      "Money-back if you don't save 20 hrs in 30 days",
     ],
     delivery: "Instant access",
-    highlight: true,
+    highlight: false,
     active: true,
   },
   {
-    id: "custom",
-    name: "Custom Branded",
+    id: "firm",
+    name: "THE FIRM",
     stripePriceId: env.STRIPE_PRICE_CUSTOM,
-    price: 297,
-    valuePrice: 9997,
-    portalProMonths: 6,
+    price: 397,
+    valuePrice: 6885,
+    portalProMonths: 0,
+    tagline: "I run a firm and need to look like one",
+    valueAnchor: "normally $4,997",
     features: [
-      "Everything in Starter",
-      "Custom branding on all key templates",
-      "Your logo, colors & firm name applied",
-      "50 customized social media designs",
-      "6 months FREE Portal Pro access",
-      "Delivery in 1-3 business days",
+      "Everything in THE TOOLKIT",
+      "Your firm's logo + colors on every key file",
+      "50 social media designs custom-built for you",
+      "Letterhead + business card + email signature",
+      "Brand guide PDF (your colors / fonts / voice)",
+      "Delivered in 1-3 business days, not weeks",
+      "Same money-back guarantee",
     ],
     delivery: "1-3 business days after intake form",
     highlight: false,
     active: true,
   },
   {
-    id: "ultimate",
-    name: "Ultimate Launch Kit",
+    id: "founder",
+    name: "THE FOUNDER",
     stripePriceId: env.STRIPE_PRICE_ULTIMATE,
-    price: 497,
-    valuePrice: 14997,
-    portalProMonths: 12,
+    price: 697,
+    valuePrice: 24812,
+    portalProMonths: 0,
+    tagline: "I'm building something. I take it seriously.",
+    valueAnchor: "normally $14,997",
+    topTierEntitlements: ["ai-tools", "crm", "dossiar"],
     features: [
-      "Everything in Custom Branded",
-      "Done-for-you professional website",
-      "Mobile-responsive & SEO-optimized site",
-      "12 months FREE Portal Pro access",
-      "1-on-1 onboarding call (30 min)",
-      "VIP support for 6 months",
+      "Everything in THE FIRM",
+      "Done-for-you website (5-7 days, mobile, SEO)",
+      "THE MILLION DOLLAR VAULT — locked bonus pack (12 assets that took 8 years + $1M to figure out)",
+      "3 months FREE access to AI Tools (55 immigration AI tools)",
+      "3 months FREE access to CRM (full RCIC practice CRM)",
+      "3 months FREE access to DOSSIAR (training simulator + virtual embassy + fix-this mode)",
+      "1-on-1 onboarding call with founder (45 min)",
+      "VIP support for 6 months (Slack DM access)",
+      "Lifetime grandfathering on everything",
     ],
     delivery: "Website delivered in 5-7 business days",
-    highlight: false,
+    highlight: true,
     active: true,
   },
 ];
@@ -182,11 +210,12 @@ export async function getPortalPlans(): Promise<PortalPlan[]> {
 }
 
 export async function getBundlePlanByTier(tier: string): Promise<BundlePlan | undefined> {
+  const resolvedTier = resolveTierId(tier);
   const plans = await getBundlePlans();
-  const found = plans.find((p) => p.id === tier && p.active);
+  const found = plans.find((p) => p.id === resolvedTier && p.active);
   if (found) return found;
   // Fallback to defaults if DB plans are corrupted or missing this tier
-  return DEFAULT_BUNDLE_PLANS.find((p) => p.id === tier && p.active);
+  return DEFAULT_BUNDLE_PLANS.find((p) => p.id === resolvedTier && p.active);
 }
 
 export async function getPortalPlanById(planId: string): Promise<PortalPlan | undefined> {

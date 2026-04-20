@@ -9,7 +9,9 @@ import { logger } from "../../utils/logger.js";
 import Stripe from "stripe";
 import { sendWelcomeEmail, sendInvoiceEmail } from "../email/email.service.js";
 import { generateInvoiceNumber } from "../../utils/invoiceNumber.js";
-import { getBundlePlanByTier, getPortalPlanById } from "../../utils/settingsHelper.js";
+import { getBundlePlanByTier, getPortalPlanById, resolveTierId } from "../../utils/settingsHelper.js";
+import { grantFounderTrialEntitlements } from "../users/entitlement.model.js";
+import { incrementFounderCounter } from "../admin/founderCounter.model.js";
 
 // These events are expected but don't need processing
 const IGNORED_EVENTS = new Set([
@@ -67,13 +69,16 @@ export const stripeWebhook = async (req: Request, res: Response) => {
         }
 
         const bundlePlan = tier ? await getBundlePlanByTier(tier) : undefined;
+        const resolvedTier = tier ? resolveTierId(tier) : undefined;
         if (bundlePlan) {
           // Bundle purchase
           const proMonths = bundlePlan.portalProMonths;
           const portalProExpiresAt = new Date();
-          portalProExpiresAt.setMonth(
-            portalProExpiresAt.getMonth() + proMonths
-          );
+          if (proMonths > 0) {
+            portalProExpiresAt.setMonth(
+              portalProExpiresAt.getMonth() + proMonths
+            );
+          }
 
           // Find or create user
           let user = await User.findOne({ email });
@@ -88,12 +93,29 @@ export const stripeWebhook = async (req: Request, res: Response) => {
               password: hashedPassword,
               isEmailVerified: true,
               plan: "pro",
-              portalProExpiresAt,
+              portalProExpiresAt: proMonths > 0 ? portalProExpiresAt : undefined,
             });
           } else {
             user.plan = "pro";
-            user.portalProExpiresAt = portalProExpiresAt;
+            if (proMonths > 0) {
+              user.portalProExpiresAt = portalProExpiresAt;
+            }
             await user.save();
+          }
+
+          // FOUNDER tier: 90-day entitlements to the three upcoming products
+          // + tick the public founder seat counter.
+          if (resolvedTier === "founder") {
+            try {
+              await grantFounderTrialEntitlements(user._id);
+            } catch (err) {
+              logger.error("Failed to grant founder trial entitlements", err);
+            }
+            try {
+              await incrementFounderCounter();
+            } catch (err) {
+              logger.error("Failed to increment founder counter", err);
+            }
           }
 
           // Create order
@@ -110,7 +132,7 @@ export const stripeWebhook = async (req: Request, res: Response) => {
             stripeSessionId: session.id,
             stripePaymentIntent: session.payment_intent as string,
             stripeCustomerId: session.customer as string,
-            tier,
+            tier: resolvedTier ?? tier,
             amount: orderAmount,
             currency: orderCurrency,
             status: "completed",

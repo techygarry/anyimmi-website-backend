@@ -13,7 +13,8 @@
     "seed-subcategories": "tsx src/scripts/seed-subcategories.ts",
     "seed-all-categories": "tsx src/scripts/seed-categories.ts && tsx src/scripts/seed-subcategories.ts",
     "seed-testimonials": "tsx src/scripts/seed-testimonials.ts",
-    "seed-assets": "tsx src/scripts/seed-assets.ts"
+    "seed-assets": "tsx src/scripts/seed-assets.ts",
+    "seed-million-dollar-vault": "tsx src/scripts/tag-million-dollar-vault.ts"
   },
   "keywords": [],
   "author": "",

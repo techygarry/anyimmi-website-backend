@@ -8,6 +8,14 @@ import { Category } from "../assets/category.model.js";
 import { SubCategory } from "../assets/subcategory.model.js";
 import { Download } from "../assets/download.model.js";
 import { SiteSetting } from "./siteSetting.model.js";
+import {
+  getFounderCounter,
+  updateFounderCounter,
+} from "./founderCounter.model.js";
+import {
+  getBonusCountdown,
+  updateBonusCountdown,
+} from "./bonusCountdown.model.js";
 import { SliderImage } from "../content/sliderImage.model.js";
 import { Testimonial } from "../content/testimonial.model.js";
 import { Contact } from "../contact/contact.model.js";
@@ -799,6 +807,79 @@ export const deleteContact = async (req: Request, res: Response, next: NextFunct
     const contact = await Contact.findByIdAndDelete(req.params.id);
     if (!contact) throw new AppError("Contact not found", 404);
     sendResponse(res, 200, null, "Contact deleted");
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Founder Counter ───────────────────────────────────────
+export const getFounderCounterAdmin = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const doc = await getFounderCounter();
+    sendResponse(res, 200, doc);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const patchFounderCounter = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const patch: Record<string, unknown> = {};
+    if (req.body.current !== undefined) {
+      const n = Number(req.body.current);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new AppError("current must be a non-negative number", 400);
+      }
+      patch.current = n;
+    }
+    if (req.body.target !== undefined) {
+      const n = Number(req.body.target);
+      if (!Number.isFinite(n) || n < 1) {
+        throw new AppError("target must be a positive number", 400);
+      }
+      patch.target = n;
+    }
+    if (req.body.active !== undefined) {
+      patch.active = Boolean(req.body.active);
+    }
+    const doc = await updateFounderCounter(patch);
+    sendResponse(res, 200, doc, "Founder counter updated");
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Bonus Countdown ───────────────────────────────────────
+export const getBonusCountdownAdmin = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const doc = await getBonusCountdown();
+    sendResponse(res, 200, doc);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const patchBonusCountdown = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const patch: Record<string, unknown> = {};
+    if (req.body.expiresAt !== undefined) {
+      const d = new Date(req.body.expiresAt);
+      if (Number.isNaN(d.getTime())) {
+        throw new AppError("expiresAt must be a valid date", 400);
+      }
+      patch.expiresAt = d;
+    }
+    if (req.body.bonusDescription !== undefined) {
+      if (typeof req.body.bonusDescription !== "string") {
+        throw new AppError("bonusDescription must be a string", 400);
+      }
+      patch.bonusDescription = req.body.bonusDescription;
+    }
+    if (req.body.active !== undefined) {
+      patch.active = Boolean(req.body.active);
+    }
+    const doc = await updateBonusCountdown(patch);
+    sendResponse(res, 200, doc, "Bonus countdown updated");
   } catch (err) {
     next(err);
   }

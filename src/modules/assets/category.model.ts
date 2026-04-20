@@ -14,6 +14,8 @@ export interface ICategory extends Document {
   useCases: string[];
   assetCount: number;
   sortOrder: number;
+  isLocked?: boolean;
+  unlockTier?: string;
 }
 
 const categorySchema = new Schema<ICategory>(
@@ -30,6 +32,8 @@ const categorySchema = new Schema<ICategory>(
     useCases: { type: [String], default: [] },
     assetCount: { type: Number, default: 0 },
     sortOrder: { type: Number, default: 0 },
+    isLocked: { type: Boolean, default: false },
+    unlockTier: { type: String },
   },
   { timestamps: true }
 );
