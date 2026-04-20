@@ -94,22 +94,22 @@ export interface PortalPlan {
 const DEFAULT_BUNDLE_PLANS: BundlePlan[] = [
   {
     id: "toolkit",
-    name: "THE TOOLKIT",
+    name: "THE ESSENTIALS",
     stripePriceId: env.STRIPE_PRICE_STARTER,
-    price: 147,
-    valuePrice: 2585,
+    price: 197,
+    valuePrice: 2685,
     portalProMonths: 0,
-    tagline: "I'm starting and need the tools",
-    valueAnchor: "normally $1,997",
+    tagline: "The goldmine of Canadian immigration assets.",
+    valueAnchor: "normally $2,685",
     features: [
-      "305 ready-to-use assets across 27 categories",
-      "All PSDs, AI files, PDFs, calculators",
-      "Lifetime updates (we ship monthly)",
-      "4 free AI tools (CRS, NOC, EE Draw, SOP gen)",
-      "Money-back if you don't save 20 hrs in 30 days",
+      "305 production-ready immigration assets across 27 categories",
+      "The full Canadian RCIC marketing vault (PSD, AI, PDF, XLSX, DOCX)",
+      "Lifetime updates — we ship new assets monthly",
+      "4 free AI tools (CRS, NOC, EE Draw, SOP gen) — forever",
+      "30-day refund — no form, no call, no exit interview",
     ],
     delivery: "Instant access",
-    highlight: false,
+    highlight: true,
     active: true,
   },
   {
@@ -119,16 +119,15 @@ const DEFAULT_BUNDLE_PLANS: BundlePlan[] = [
     price: 397,
     valuePrice: 6885,
     portalProMonths: 0,
-    tagline: "I run a firm and need to look like one",
-    valueAnchor: "normally $4,997",
+    tagline: "Your brand. Our arsenal. Every asset carries your name.",
+    valueAnchor: "normally $6,885",
     features: [
-      "Everything in THE TOOLKIT",
-      "Your firm's logo + colors on every key file",
-      "50 social media designs custom-built for you",
+      "Everything in THE ESSENTIALS",
+      "Your firm's logo + colors on every key asset",
+      "50 social media designs custom-built for your practice",
       "Letterhead + business card + email signature",
-      "Brand guide PDF (your colors / fonts / voice)",
-      "Delivered in 1-3 business days, not weeks",
-      "Same money-back guarantee",
+      "Brand guide PDF (colors, fonts, voice)",
+      "Delivered in 1-3 business days",
     ],
     delivery: "1-3 business days after intake form",
     highlight: false,
@@ -139,24 +138,54 @@ const DEFAULT_BUNDLE_PLANS: BundlePlan[] = [
     name: "THE FOUNDER",
     stripePriceId: env.STRIPE_PRICE_ULTIMATE,
     price: 697,
-    valuePrice: 24812,
+    valuePrice: 25112,
     portalProMonths: 0,
-    tagline: "I'm building something. I take it seriously.",
-    valueAnchor: "normally $14,997",
+    tagline: "The goldmine + the keys to the castle.",
+    valueAnchor: "normally $25,112",
     topTierEntitlements: ["ai-tools", "crm", "dossiar"],
     features: [
       "Everything in THE FIRM",
-      "Done-for-you website (5-7 days, mobile, SEO)",
-      "THE MILLION DOLLAR VAULT — locked bonus pack (12 assets that took 8 years + $1M to figure out)",
-      "3 months FREE access to AI Tools (55 immigration AI tools)",
-      "3 months FREE access to CRM (full RCIC practice CRM)",
-      "3 months FREE access to DOSSIAR (training simulator + virtual embassy + fix-this mode)",
+      "Done-for-you website (5-7 days, mobile, SEO-optimized)",
+      "The Million Dollar Vault — 12 bonus assets, Founder-only",
+      "90 days FREE — AI Tools + CRM + DOSSIAR ($621 retail)",
       "1-on-1 onboarding call with founder (45 min)",
-      "VIP support for 6 months (Slack DM access)",
-      "Lifetime grandfathering on everything",
+      "VIP Slack access (6 months, direct founder DM)",
+      "Founder Lock-In: when prices rise, you keep yours forever",
     ],
     delivery: "Website delivered in 5-7 business days",
-    highlight: true,
+    highlight: false,
+    active: true,
+  },
+];
+
+// ─── Order-bump upsells (checkout-time add-ons) ─────────────────────────
+// Shown as optional checkboxes on the Stripe checkout page. One-click add.
+// Only TWO bumps chosen for focus — third feels like friction.
+export interface OrderBump {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  /** Which tiers show this bump (hide if already included) */
+  availableFor: string[];
+  active: boolean;
+}
+
+export const ORDER_BUMPS: OrderBump[] = [
+  {
+    id: "custom-branding",
+    name: "Add Custom Branding",
+    description: "Apply your firm's logo + colors to all 305 assets. Delivered in 1-3 days.",
+    price: 200,
+    availableFor: ["toolkit"],
+    active: true,
+  },
+  {
+    id: "trial-3-products",
+    name: "Add 90-Day Trial — AI Tools + CRM + DOSSIAR",
+    description: "Full access to all three upcoming products for 90 days. Worth $621 retail.",
+    price: 300,
+    availableFor: ["toolkit", "firm"],
     active: true,
   },
 ];
