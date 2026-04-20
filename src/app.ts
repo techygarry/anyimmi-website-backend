@@ -61,8 +61,20 @@ app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use(morgan("dev"));
 
-// Serve local uploads (category images etc.) — separate from S3 assets
-app.use("/uploads", express.static(path.join(__dirname, "../uploads"), { maxAge: "1d" }));
+// Serve local uploads (category images + bundle files).
+// CORS open for these so the dashboard at :3000 can <iframe> PDFs and
+// trigger anchor downloads from a different origin without preflight pain.
+// In prod swap to S3/CDN with the same paths — controllers and frontends
+// don't need to change.
+app.use(
+  "/uploads",
+  (_req, res, next) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
+  express.static(path.join(__dirname, "../uploads"), { maxAge: "1d" }),
+);
 
 // Health check
 app.get("/api/health", (_req, res) => {
